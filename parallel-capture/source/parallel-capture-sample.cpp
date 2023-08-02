@@ -26,6 +26,11 @@
 
 #include <pcl/visualization/pcl_visualizer.h>
 #include <pcl/common/io.h>
+#include <pcl/common/concatenate.h>
+#include <pcl/io/pcd_io.h>
+#include <pcl/point_types.h>
+#include <pcl/point_cloud.h>
+#include <pcl/registration/icp.h>
 #include <thread>
 
 using namespace boost::chrono;
@@ -40,6 +45,7 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr cloud;
 
 // this constant determines the number of frames to collect.
 const int NumberOfFramesToCapture = 100;
+bool cloud_first = true;
 
 void init_cloud()
 {
@@ -51,6 +57,7 @@ void init_cloud()
     viewer->addCoordinateSystem(1.0);
     viewer->initCameraParameters();
     viewer->setCameraPosition(0, 0, 10, 0, 0, 0);
+    viewer->setSize(1200, 800);
 
     while (!viewer->wasStopped())
     {
@@ -67,12 +74,48 @@ void viewPCD(TRef<asdk::IFrameMesh> mesh)
         int size = points.size();
 
         std::wcout << L"Showing the resulting Points Size... : " << size << std::endl;
-        pcl::PointCloud<pcl::PointXYZ>::Ptr temp_cloud(new pcl::PointCloud<pcl::PointXYZ>);
+        pcl::PointCloud<pcl::PointXYZ>::Ptr cur_cloud(new pcl::PointCloud<pcl::PointXYZ>);
         for (int i = 0; i < size; i++)
         {
-            temp_cloud->push_back(pcl::PointXYZ(points[i].x, points[i].y, points[i].z));
+            cur_cloud->push_back(pcl::PointXYZ(points[i].x, points[i].y, points[i].z));
         }
-        cloud = temp_cloud;
+
+        std::chrono::system_clock::time_point t_start = std::chrono::system_clock::now(); // Time Consuming Check
+
+        if (cloud_first) {
+            cloud = cur_cloud;
+            cloud_first = false;
+        }
+
+        // Iterative ICP
+        pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;
+        //icp.setMaxCorrespondenceDistance(0.1);
+        //icp.setTransformationEpsilon(1e-8);
+        icp.setMaximumIterations(100);
+
+        pcl::PointCloud<pcl::PointXYZ>::Ptr align_cloud(new pcl::PointCloud<pcl::PointXYZ>);
+        pcl::PointCloud<pcl::PointXYZ>::Ptr co_cloud(new pcl::PointCloud<pcl::PointXYZ>);
+        icp.setInputSource(cur_cloud);
+        icp.setInputTarget(cloud);
+        icp.align(*align_cloud);
+
+        if (icp.hasConverged())
+        {
+            std::wcout << L"ICP converged. Score is " << icp.getFitnessScore() << std::endl;
+            std::cout << "Transformation matrix:" << icp.getFinalTransformation() << std::endl;
+        }
+        else
+        {
+            std::wcout << L"ICP did not converge." << std::endl;
+        }
+
+        std::chrono::system_clock::time_point t_end = std::chrono::system_clock::now();
+        std::chrono::duration<double> t_reg = t_end - t_start;
+        std::wcout << L"ICP Takes " << t_reg.count() << L" sec..." << endl;
+
+        //pcl::concatenateFields(*cloud, *align_cloud, *co_cloud);
+        *co_cloud = *cloud + *align_cloud;
+        cloud =  co_cloud;
         std::wcout << L"Point Cloud is updated " << std::endl;
     }
     else std::wcout << L"Mesh has no texture" << std::endl;
