@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Label="UserMacros">
+    <ArtecSDKHome>..\ArtecSDK</ArtecSDKHome>
+    <BoostHome>..\boost_1_81_0</BoostHome>
+    <GLFWHome>..\glfw-3.1.1</GLFWHome>
+    <GLFWLibSubDir>lib</GLFWLibSubDir>
+    <GLFWInclude>$(GLFWHome)\include</GLFWInclude>
+    <GLFWLibs>$(GLFWHome)\$(GLFWLibSubDir)$(PlatformSuffix)</GLFWLibs>
+    <BinDir>bin$(PlatformSuffix)\</BinDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(ArtecSDKHome)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <AdditionalLibraryDirectories>$(ArtecSDKHome)\$(BinDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>artec-sdk-base.lib;artec-sdk-capturing.lib;artec-sdk-algorithms.lib;artec-sdk-scanning.lib;artec-sdk-project.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <PostBuildEvent>
+      <Command>
+xcopy "$(ArtecSDKHome)\$(BinDir)*.dll" "$(OutDir)" /Y /D
+      </Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <BuildMacro Include="ArtecSDKHome">
+      <Value>$(ArtecSDKHome)</Value>
+    </BuildMacro>
+    <BuildMacro Include="BoostHome">
+      <Value>$(BoostHome)</Value>
+      <EnvironmentVariable>true</EnvironmentVariable>
+    </BuildMacro>
+    <BuildMacro Include="GLFWHome">
+      <Value>$(GLFWHome)</Value>
+    </BuildMacro>
+    <BuildMacro Include="GLFWLibSubDir">
+      <Value>$(GLFWLibSubDir)</Value>
+      <EnvironmentVariable>true</EnvironmentVariable>
+    </BuildMacro>
+  </ItemGroup>
+</Project>

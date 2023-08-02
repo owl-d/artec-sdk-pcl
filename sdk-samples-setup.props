@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Label="Suffices">
+    <!--debug suffix-->
+    <DebugSuffix Condition="'$(Configuration)' == 'Debug'">d</DebugSuffix>
+    <DebugSuffix Condition="'$(Configuration)' != 'Debug'"></DebugSuffix>
+    <!--platform-->
+    <ShortPlatform Condition="'$(Platform)' == 'Win32'">x86</ShortPlatform>
+    <ShortPlatform Condition="'$(Platform)' == 'x64'">x64</ShortPlatform>
+    <!--platform suffix-->
+    <PlatformSuffix Condition="'$(Platform)' == 'Win32'"></PlatformSuffix>
+    <PlatformSuffix Condition="'$(Platform)' == 'x64'">-$(ShortPlatform)</PlatformSuffix>
+    <!--digital suffix-->
+    <DigitalSuffix Condition="'$(Platform)' == 'Win32'"></DigitalSuffix>
+    <DigitalSuffix Condition="'$(Platform)' == 'x64'">64</DigitalSuffix>
+    <!--toolset-->
+    <Toolset Condition="'$(PlatformToolset)' == 'v100'">vc10</Toolset>
+    <Toolset Condition="'$(PlatformToolset)' == 'v110'">vc11</Toolset>
+    <Toolset Condition="'$(PlatformToolset)' == 'v120'">vc12</Toolset>
+    <Toolset Condition="'$(PlatformToolset)' == 'v130'">vc13</Toolset>
+    <Toolset Condition="'$(PlatformToolset)' == 'v140'">vc14</Toolset>
+    <!--toolset suffix-->
+    <ToolsetSuffix Condition="'$(PlatformToolset)' == 'v100'"></ToolsetSuffix>
+    <ToolsetSuffix Condition="'$(PlatformToolset)' != 'v100' AND '$(Toolset)' != ''">-$(Toolset)</ToolsetSuffix>
+    <!--directory ToolsetSuffix-->
+    <DirSuffix>$(ToolsetSuffix)$(PlatformSuffix)</DirSuffix>
+  </PropertyGroup>
+  <PropertyGroup Label="Pathnames">
+    <!--directory settings-->
+    <IntDir>~$(Configuration)$(DirSuffix)-$(ProjectName)/</IntDir>
+    <OutDir>bin$(DirSuffix)\</OutDir>
+    <TargetName>$(ProjectName)$(DebugSuffix)</TargetName>
+    <PredefinedMacro></PredefinedMacro>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+</Project>
