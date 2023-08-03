@@ -42,10 +42,15 @@ using asdk::TRef;
 using asdk::TArrayRef;
 
 pcl::PointCloud<pcl::PointXYZ>::Ptr cloud;
+bool cloud_flag = true;
 
-// this constant determines the number of frames to collect.
-const int NumberOfFramesToCapture = 100;
-bool cloud_first = true;
+// Hyper Parameter
+const int NumberOfFramesToCapture = 100; // # of frames to collect.
+const int MaximumIterations = 100;       // # of icp max iteration
+double Score_threshold = 10.0;           // current cloud is added to global if only socre(Mean squared distance) < threshold
+double MaxCorrespondenceDistance = 0.1;  // icp max correspondence distance    
+double TransformationEpsilon = 1e-16;    // icp tf epsilon
+
 
 void init_cloud()
 {
@@ -57,7 +62,7 @@ void init_cloud()
     viewer->addCoordinateSystem(1.0);
     viewer->initCameraParameters();
     viewer->setCameraPosition(0, 0, 10, 0, 0, 0);
-    viewer->setSize(1200, 800);
+    viewer->setSize(1200, 1000);
 
     while (!viewer->wasStopped())
     {
@@ -82,16 +87,16 @@ void viewPCD(TRef<asdk::IFrameMesh> mesh)
 
         std::chrono::system_clock::time_point t_start = std::chrono::system_clock::now(); // Time Consuming Check
 
-        if (cloud_first) {
+        if (cloud_flag) {
             cloud = cur_cloud;
-            cloud_first = false;
+            cloud_flag = false;
         }
 
         // Iterative ICP
         pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;
-        //icp.setMaxCorrespondenceDistance(0.1);
-        //icp.setTransformationEpsilon(1e-8);
-        icp.setMaximumIterations(100);
+        //icp.setMaxCorrespondenceDistance(MaxCorrespondenceDistance);
+        icp.setTransformationEpsilon(TransformationEpsilon);
+        icp.setMaximumIterations(MaximumIterations);
 
         pcl::PointCloud<pcl::PointXYZ>::Ptr align_cloud(new pcl::PointCloud<pcl::PointXYZ>);
         pcl::PointCloud<pcl::PointXYZ>::Ptr co_cloud(new pcl::PointCloud<pcl::PointXYZ>);
@@ -102,7 +107,8 @@ void viewPCD(TRef<asdk::IFrameMesh> mesh)
         if (icp.hasConverged())
         {
             std::wcout << L"ICP converged. Score is " << icp.getFitnessScore() << std::endl;
-            std::cout << "Transformation matrix:" << icp.getFinalTransformation() << std::endl;
+            //std::cout << "Transformation matrix:" << std::endl;
+            //std::cout << icp.getFinalTransformation() << std::endl;
         }
         else
         {
@@ -114,9 +120,10 @@ void viewPCD(TRef<asdk::IFrameMesh> mesh)
         std::wcout << L"ICP Takes " << t_reg.count() << L" sec..." << endl;
 
         //pcl::concatenateFields(*cloud, *align_cloud, *co_cloud);
-        *co_cloud = *cloud + *align_cloud;
-        cloud =  co_cloud;
-        std::wcout << L"Point Cloud is updated " << std::endl;
+        if (icp.getFitnessScore() < Score_threshold) {
+            *co_cloud = *cloud + *align_cloud; //score 낮으면 합치지 말기
+            cloud = co_cloud;
+        }
     }
     else std::wcout << L"Mesh has no texture" << std::endl;
 }
