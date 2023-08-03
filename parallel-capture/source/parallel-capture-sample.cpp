@@ -30,7 +30,8 @@
 #include <pcl/io/pcd_io.h>
 #include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
-#include <pcl/registration/icp.h>
+#include <pcl/common/transforms.h>
+#include <pcl/registration/gicp.h>
 #include <thread>
 
 using namespace boost::chrono;
@@ -42,14 +43,16 @@ using asdk::TRef;
 using asdk::TArrayRef;
 
 pcl::PointCloud<pcl::PointXYZ>::Ptr cloud;
+pcl::PointCloud<pcl::PointXYZ>::Ptr prev_cloud;
+Eigen::Matrix4f accum_tf;
 bool cloud_flag = true;
 
 // Hyper Parameter
 const int NumberOfFramesToCapture = 100; // # of frames to collect.
-const int MaximumIterations = 100;       // # of icp max iteration
-double Score_threshold = 10.0;           // current cloud is added to global if only socre(Mean squared distance) < threshold
-double MaxCorrespondenceDistance = 0.1;  // icp max correspondence distance    
-double TransformationEpsilon = 1e-16;    // icp tf epsilon
+const int MaximumIterations = 50;       // # of icp max iteration
+double Score_threshold = 5.0;           // current cloud is added to global if only socre(Mean squared distance) < threshold
+//double MaxCorrespondenceDistance = 0.1;  // icp max correspondence distance    
+//double TransformationEpsilon = 1e-10;    // icp tf epsilon
 
 
 void init_cloud()
@@ -62,7 +65,7 @@ void init_cloud()
     viewer->addCoordinateSystem(1.0);
     viewer->initCameraParameters();
     viewer->setCameraPosition(0, 0, 10, 0, 0, 0);
-    viewer->setSize(1200, 1000);
+    viewer->setSize(1200, 1200);
 
     while (!viewer->wasStopped())
     {
@@ -89,13 +92,14 @@ void viewPCD(TRef<asdk::IFrameMesh> mesh)
 
         if (cloud_flag) {
             cloud = cur_cloud;
+            prev_cloud = cur_cloud;
             cloud_flag = false;
         }
 
-        // Iterative ICP
-        pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;
+        // GICP
+        pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;
         //icp.setMaxCorrespondenceDistance(MaxCorrespondenceDistance);
-        icp.setTransformationEpsilon(TransformationEpsilon);
+        //icp.setTransformationEpsilon(TransformationEpsilon);
         icp.setMaximumIterations(MaximumIterations);
 
         pcl::PointCloud<pcl::PointXYZ>::Ptr align_cloud(new pcl::PointCloud<pcl::PointXYZ>);
@@ -120,8 +124,11 @@ void viewPCD(TRef<asdk::IFrameMesh> mesh)
         std::wcout << L"ICP Takes " << t_reg.count() << L" sec..." << endl;
 
         //pcl::concatenateFields(*cloud, *align_cloud, *co_cloud);
-        if (icp.getFitnessScore() < Score_threshold) {
-            *co_cloud = *cloud + *align_cloud; //score 낮으면 합치지 말기
+        if (icp.getFitnessScore(10.0) < Score_threshold) {
+            //accum_tf *= icp.getFinalTransformation();
+            //pcl::transformPointCloud(*align_cloud, *cur_cloud, accum_tf);
+            *co_cloud = *cloud + *align_cloud;
+            prev_cloud = align_cloud;
             cloud = co_cloud;
         }
     }
