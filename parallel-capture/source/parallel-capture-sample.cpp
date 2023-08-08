@@ -44,22 +44,25 @@ using asdk::TRef;
 using asdk::TArrayRef;
 
 pcl::PointCloud<pcl::PointXYZ>::Ptr cloud;
+pcl::PointCloud<pcl::PointXYZ>::Ptr cur_cloud;
 pcl::PointCloud<pcl::PointXYZ>::Ptr prev_cloud;
 Eigen::Matrix4f accum_tf;
 bool cloud_flag = true;
 
 // Hyper Parameter
-const int NumberOfFramesToCapture = 500; // # of frames to collect.
+const int NumberOfFramesToCapture = 50; // # of frames to collect.
 //const int MaximumIterations = 50;       // # of icp max iteration
 //double Score_threshold = 5.0;           // current cloud is added to global if only socre(Mean squared distance) < threshold
 //double MaxCorrespondenceDistance = 0.1;  // icp max correspondence distance    
 //double TransformationEpsilon = 1e-6;    // icp tf epsilon
 
 
-void init_cloud()
+void viewer_set()
 {
     std::wcout << L"Init cloud" << std::endl;
     cloud.reset(new pcl::PointCloud<pcl::PointXYZ>);
+    cur_cloud.reset(new pcl::PointCloud<pcl::PointXYZ>);
+    prev_cloud.reset(new pcl::PointCloud<pcl::PointXYZ>);
     pcl::visualization::PCLVisualizer::Ptr viewer(new pcl::visualization::PCLVisualizer("Point Cloud Viewer"));
     viewer->addPointCloud<pcl::PointXYZ>(cloud, "point_cloud");
     viewer->setBackgroundColor(0.0, 0.0, 0.0);
@@ -72,85 +75,79 @@ void init_cloud()
     }
 }
 
-void viewPCD(TRef<asdk::IFrameMesh> mesh)
+void mesh2pcd(TRef<asdk::IFrameMesh> mesh)
 {
     if (mesh->isTextured())
     {
+        cur_cloud->clear();
         asdk::TArrayPoint3F points = mesh->getPoints();
         int size = points.size();
 
         std::wcout << L"Showing the resulting Points Size... : " << size << std::endl;
-        pcl::PointCloud<pcl::PointXYZ>::Ptr cur_cloud(new pcl::PointCloud<pcl::PointXYZ>);
         for (int i = 0; i < size; i++)
         {
             cur_cloud->push_back(pcl::PointXYZ(points[i].x, points[i].y, points[i].z));
         }
-
-        std::chrono::system_clock::time_point t_start = std::chrono::system_clock::now(); // Time Consuming Check
-
+        std::wcout << L"3 Cloud points size is " << cloud->points.size() << std::endl;
         if (cloud_flag) {
-            cloud = cur_cloud;
-            prev_cloud = cur_cloud;
+            *cloud = *cur_cloud;
+            *prev_cloud = *cur_cloud;
             cloud_flag = false;
-        }
-
-        // GICP
-        pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> gicp;
-        gicp.setMaximumIterations(50); //def=200
-        gicp.setMaximumOptimizerIterations(30); //def=20
-        gicp.setCorrespondenceRandomness(50); //def=20
-        gicp.setMaxCorrespondenceDistance(0.05);
-        gicp.setUseReciprocalCorrespondences(true);
-        gicp.setRANSACIterations(10); //def=0
-        gicp.setRANSACOutlierRejectionThreshold(0.03);
-
-        pcl::PointCloud<pcl::PointXYZ>::Ptr align_cloud(new pcl::PointCloud<pcl::PointXYZ>);
-        pcl::PointCloud<pcl::PointXYZ>::Ptr co_cloud(new pcl::PointCloud<pcl::PointXYZ>);
-        gicp.setInputSource(cur_cloud);
-        gicp.setInputTarget(cloud);
-        gicp.align(*align_cloud);
-
-        if (gicp.hasConverged())
-        {
-            std::wcout << L"ICP converged. Score is " << gicp.getFitnessScore() << std::endl;
-            //std::cout << "Transformation matrix:" << std::endl;
-            //std::cout << gicp.getFinalTransformation() << std::endl;
-        }
-        else
-        {
-            std::wcout << L"ICP did not converge." << std::endl;
-        }
-
-        std::chrono::system_clock::time_point t_end = std::chrono::system_clock::now();
-        std::chrono::duration<double> t_reg = t_end - t_start;
-        std::wcout << L"ICP Takes " << t_reg.count() << L" sec..." << endl;
-
-        //pcl::concatenateFields(*cloud, *align_cloud, *co_cloud);
-        if (gicp.getFitnessScore(10.0) < 6.0) {
-            //accum_tf *= gicp.getFinalTransformation();
-            //pcl::transformPointCloud(*cur_cloud, *align_cloud, accum_tf);
-            *co_cloud = *cloud + *align_cloud;
-            prev_cloud = align_cloud;
-            cloud = co_cloud;
-
-            ////Remove duplicated points
-            //pcl::VoxelGrid<pcl::PointXYZ> sor;
-            //sor.setInputCloud(co_cloud);
-            //sor.setLeafSize(0.2f, 0.2f, 0.2f);
-            //sor.filter(*cloud);
         }
     }
     else std::wcout << L"Mesh has no texture" << std::endl;
 }
 
+void GICP() {
+
+    std::chrono::system_clock::time_point t_start = std::chrono::system_clock::now(); // Time Consuming Check
+
+    // GICP
+    pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> gicp;
+    gicp.setMaximumIterations(50); //def=200
+    gicp.setMaximumOptimizerIterations(30); //def=20
+    gicp.setCorrespondenceRandomness(50); //def=20
+    gicp.setMaxCorrespondenceDistance(0.05);
+    //gicp.setUseReciprocalCorrespondences(true);
+    gicp.setRANSACIterations(10); //def=0
+    gicp.setRANSACOutlierRejectionThreshold(0.03);
+
+    pcl::PointCloud<pcl::PointXYZ>::Ptr align_cloud(new pcl::PointCloud<pcl::PointXYZ>);
+    pcl::PointCloud<pcl::PointXYZ>::Ptr co_cloud(new pcl::PointCloud<pcl::PointXYZ>);
+    gicp.setInputSource(cur_cloud);
+    gicp.setInputTarget(cloud);
+    gicp.align(*align_cloud);
+
+    if (gicp.hasConverged())
+    {
+        std::wcout << L"ICP converged. Score is " << gicp.getFitnessScore() << std::endl;
+        //std::cout << "Transformation matrix:" << std::endl;
+        //std::cout << gicp.getFinalTransformation() << std::endl;
+    }
+    else std::wcout << L"ICP did not converge." << std::endl;
+
+    std::chrono::system_clock::time_point t_end = std::chrono::system_clock::now();
+    std::chrono::duration<double> t_reg = t_end - t_start;
+    std::wcout << L"ICP Takes " << t_reg.count() << L" sec..." << endl;
+
+    if (gicp.getFitnessScore(10.0) < 5.0) {
+        //co_cloud->clear();
+        *co_cloud = *cloud + *align_cloud;
+        prev_cloud = align_cloud;
+        //cloud = co_cloud;
+
+        //Remove duplicated points
+        pcl::VoxelGrid<pcl::PointXYZ> sor;
+        sor.setInputCloud(co_cloud);
+        sor.setLeafSize(0.1f, 0.1f, 0.1f);
+        sor.filter(*cloud);
+        std::wcout << L"DownSampling Cloud points size is " << cloud->points.size() << std::endl;
+    }
+    else std::wcout << L"[High ICP score] Skip registration of this frame " << gicp.getFitnessScore() << std::endl;
+}
+
 int main(int argc, char** argv)
 {
-    // The log verbosity level is set here. It is set to the most
-    // verbose value - Trace. If you have any problems working with 
-    // our examples, please do not hesitate to send us this extensive 
-    // information along with your questions. However, if you feel 
-    // comfortable with these Artec Scanning SDK code examples,
-    // we suggest you to set this level to asdk::VerboseLevel_Info.
     asdk::setOutputLevel(asdk::VerboseLevel_Trace);
 
     TRef<asdk::IScanner> scanner;
@@ -212,7 +209,7 @@ int main(int argc, char** argv)
     high_resolution_clock::time_point startTime = high_resolution_clock::now();
 
     // Initialize Pointcloud and viz
-    std::thread cloud_viz(init_cloud);
+    std::thread cloud_viz(viewer_set);
 
     // Start frame processing for every hard-supported thread available
     boost::thread_group captureThreads;
@@ -273,7 +270,8 @@ int main(int argc, char** argv)
                         std::wcout << L"Capture error: reconstruction failed for frame " << std::setw(4) << (frameNumber + 1) << std::endl;
                         continue;
                     }
-                    viewPCD(mesh);
+                    mesh2pcd(mesh);
+                    GICP();
 
                     // Calculate additional data
                     mesh->calculate(asdk::CM_Normals);
@@ -291,6 +289,9 @@ int main(int argc, char** argv)
 
     // Wait for the capture process to finish
     captureThreads.join_all();
+
+    std::wcout << L"Accumulated Point Cloud is saved." << std::endl;
+    pcl::io::savePCDFileASCII("C:/Users/ssoss/Desktop/samples_origin/samples/output_cloud.pcd", *cloud);
 
     high_resolution_clock::time_point stopTime = high_resolution_clock::now();
 
@@ -314,6 +315,8 @@ int main(int argc, char** argv)
 
     cloud_viz.join();
     std::wcout << L"Waits for the thread to finish its execution" << std::endl;
+
+
 
     return 0;
 }
