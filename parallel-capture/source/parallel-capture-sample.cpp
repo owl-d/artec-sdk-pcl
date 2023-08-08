@@ -32,6 +32,7 @@
 #include <pcl/point_cloud.h>
 #include <pcl/common/transforms.h>
 #include <pcl/registration/gicp.h>
+#include <pcl/filters/voxel_grid.h>
 #include <thread>
 
 using namespace boost::chrono;
@@ -48,11 +49,11 @@ Eigen::Matrix4f accum_tf;
 bool cloud_flag = true;
 
 // Hyper Parameter
-const int NumberOfFramesToCapture = 100; // # of frames to collect.
-const int MaximumIterations = 50;       // # of icp max iteration
-double Score_threshold = 5.0;           // current cloud is added to global if only socre(Mean squared distance) < threshold
+const int NumberOfFramesToCapture = 500; // # of frames to collect.
+//const int MaximumIterations = 50;       // # of icp max iteration
+//double Score_threshold = 5.0;           // current cloud is added to global if only socre(Mean squared distance) < threshold
 //double MaxCorrespondenceDistance = 0.1;  // icp max correspondence distance    
-//double TransformationEpsilon = 1e-10;    // icp tf epsilon
+//double TransformationEpsilon = 1e-6;    // icp tf epsilon
 
 
 void init_cloud()
@@ -62,10 +63,7 @@ void init_cloud()
     pcl::visualization::PCLVisualizer::Ptr viewer(new pcl::visualization::PCLVisualizer("Point Cloud Viewer"));
     viewer->addPointCloud<pcl::PointXYZ>(cloud, "point_cloud");
     viewer->setBackgroundColor(0.0, 0.0, 0.0);
-    viewer->addCoordinateSystem(1.0);
-    viewer->initCameraParameters();
-    viewer->setCameraPosition(0, 0, 10, 0, 0, 0);
-    viewer->setSize(1200, 1200);
+    viewer->setSize(1200, 1000);
 
     while (!viewer->wasStopped())
     {
@@ -97,22 +95,26 @@ void viewPCD(TRef<asdk::IFrameMesh> mesh)
         }
 
         // GICP
-        pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;
-        //icp.setMaxCorrespondenceDistance(MaxCorrespondenceDistance);
-        //icp.setTransformationEpsilon(TransformationEpsilon);
-        icp.setMaximumIterations(MaximumIterations);
+        pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> gicp;
+        gicp.setMaximumIterations(50); //def=200
+        gicp.setMaximumOptimizerIterations(30); //def=20
+        gicp.setCorrespondenceRandomness(50); //def=20
+        gicp.setMaxCorrespondenceDistance(0.05);
+        gicp.setUseReciprocalCorrespondences(true);
+        gicp.setRANSACIterations(10); //def=0
+        gicp.setRANSACOutlierRejectionThreshold(0.03);
 
         pcl::PointCloud<pcl::PointXYZ>::Ptr align_cloud(new pcl::PointCloud<pcl::PointXYZ>);
         pcl::PointCloud<pcl::PointXYZ>::Ptr co_cloud(new pcl::PointCloud<pcl::PointXYZ>);
-        icp.setInputSource(cur_cloud);
-        icp.setInputTarget(cloud);
-        icp.align(*align_cloud);
+        gicp.setInputSource(cur_cloud);
+        gicp.setInputTarget(cloud);
+        gicp.align(*align_cloud);
 
-        if (icp.hasConverged())
+        if (gicp.hasConverged())
         {
-            std::wcout << L"ICP converged. Score is " << icp.getFitnessScore() << std::endl;
+            std::wcout << L"ICP converged. Score is " << gicp.getFitnessScore() << std::endl;
             //std::cout << "Transformation matrix:" << std::endl;
-            //std::cout << icp.getFinalTransformation() << std::endl;
+            //std::cout << gicp.getFinalTransformation() << std::endl;
         }
         else
         {
@@ -124,12 +126,18 @@ void viewPCD(TRef<asdk::IFrameMesh> mesh)
         std::wcout << L"ICP Takes " << t_reg.count() << L" sec..." << endl;
 
         //pcl::concatenateFields(*cloud, *align_cloud, *co_cloud);
-        if (icp.getFitnessScore(10.0) < Score_threshold) {
-            //accum_tf *= icp.getFinalTransformation();
-            //pcl::transformPointCloud(*align_cloud, *cur_cloud, accum_tf);
+        if (gicp.getFitnessScore(10.0) < 6.0) {
+            //accum_tf *= gicp.getFinalTransformation();
+            //pcl::transformPointCloud(*cur_cloud, *align_cloud, accum_tf);
             *co_cloud = *cloud + *align_cloud;
             prev_cloud = align_cloud;
             cloud = co_cloud;
+
+            ////Remove duplicated points
+            //pcl::VoxelGrid<pcl::PointXYZ> sor;
+            //sor.setInputCloud(co_cloud);
+            //sor.setLeafSize(0.2f, 0.2f, 0.2f);
+            //sor.filter(*cloud);
         }
     }
     else std::wcout << L"Mesh has no texture" << std::endl;
