@@ -33,7 +33,9 @@
 #include <pcl/common/transforms.h>
 #include <pcl/registration/gicp.h>
 #include <pcl/filters/voxel_grid.h>
+
 #include <thread>
+#include <math.h>
 
 using namespace boost::chrono;
 namespace asdk {
@@ -47,10 +49,11 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr cloud;
 pcl::PointCloud<pcl::PointXYZ>::Ptr cur_cloud;
 pcl::PointCloud<pcl::PointXYZ>::Ptr prev_cloud;
 Eigen::Matrix4f accum_tf;
+Eigen::Matrix4f guess_tf;
 bool cloud_flag = true;
 
 // Hyper Parameter
-const int NumberOfFramesToCapture = 50; // # of frames to collect.
+const int NumberOfFramesToCapture = 100; // # of frames to collect.
 //const int MaximumIterations = 50;       // # of icp max iteration
 //double Score_threshold = 5.0;           // current cloud is added to global if only socre(Mean squared distance) < threshold
 //double MaxCorrespondenceDistance = 0.1;  // icp max correspondence distance    
@@ -64,14 +67,31 @@ void viewer_set()
     cur_cloud.reset(new pcl::PointCloud<pcl::PointXYZ>);
     prev_cloud.reset(new pcl::PointCloud<pcl::PointXYZ>);
     pcl::visualization::PCLVisualizer::Ptr viewer(new pcl::visualization::PCLVisualizer("Point Cloud Viewer"));
-    viewer->addPointCloud<pcl::PointXYZ>(cloud, "point_cloud");
+    viewer->addPointCloud<pcl::PointXYZ>(prev_cloud, "point_cloud");
     viewer->setBackgroundColor(0.0, 0.0, 0.0);
     viewer->setSize(1200, 1000);
 
+    //guess_tf << 0.9876884, -0.1564345, 0, 0,//turn 9deg(yaw)
+    //            0.1564345, 0.9876884, 0, 0,
+    //            0, 0, 1, 0,
+    //            0, 0, 0, 1;
+
+    //guess_tf << 1, 0, 0, 0,//turn 5deg(roll)
+    //            0, 0.9961947, -0.0871557, 0,
+    //            0, 0.0871557, 0.9961947, 0,
+    //            0, 0, 0, 1;
+
+    guess_tf << 0.9961947, 0, 0.0871557, 0,//turn 5deg(pitch)
+                0, 1, 0, 0,
+                -0.0871557, 0, 0.9961947, 0,
+                0, 0, 0, 1;
+
+
     while (!viewer->wasStopped())
     {
-        viewer->updatePointCloud<pcl::PointXYZ>(cloud, "point_cloud");
+        viewer->updatePointCloud<pcl::PointXYZ>(prev_cloud, "point_cloud");
         viewer->spinOnce();
+        std::this_thread::sleep_for(std::chrono::milliseconds(500)); //0.5sec
     }
 }
 
@@ -83,12 +103,11 @@ void mesh2pcd(TRef<asdk::IFrameMesh> mesh)
         asdk::TArrayPoint3F points = mesh->getPoints();
         int size = points.size();
 
-        std::wcout << L"Showing the resulting Points Size... : " << size << std::endl;
+        std::wcout << L"Current Points Size... : " << size << std::endl;
         for (int i = 0; i < size; i++)
         {
             cur_cloud->push_back(pcl::PointXYZ(points[i].x, points[i].y, points[i].z));
         }
-        std::wcout << L"3 Cloud points size is " << cloud->points.size() << std::endl;
         if (cloud_flag) {
             *cloud = *cur_cloud;
             *prev_cloud = *cur_cloud;
@@ -100,29 +119,41 @@ void mesh2pcd(TRef<asdk::IFrameMesh> mesh)
 
 void GICP() {
 
+    double roll=0, pitch=0, yaw=0;
     std::chrono::system_clock::time_point t_start = std::chrono::system_clock::now(); // Time Consuming Check
 
     // GICP
     pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> gicp;
-    gicp.setMaximumIterations(50); //def=200
+    //gicp.setMaximumIterations(50); //def=200
     gicp.setMaximumOptimizerIterations(30); //def=20
     gicp.setCorrespondenceRandomness(50); //def=20
     gicp.setMaxCorrespondenceDistance(0.05);
-    //gicp.setUseReciprocalCorrespondences(true);
+    gicp.setUseReciprocalCorrespondences(true);
     gicp.setRANSACIterations(10); //def=0
     gicp.setRANSACOutlierRejectionThreshold(0.03);
 
     pcl::PointCloud<pcl::PointXYZ>::Ptr align_cloud(new pcl::PointCloud<pcl::PointXYZ>);
     pcl::PointCloud<pcl::PointXYZ>::Ptr co_cloud(new pcl::PointCloud<pcl::PointXYZ>);
     gicp.setInputSource(cur_cloud);
-    gicp.setInputTarget(cloud);
+    gicp.setInputTarget(prev_cloud);
     gicp.align(*align_cloud);
 
     if (gicp.hasConverged())
     {
         std::wcout << L"ICP converged. Score is " << gicp.getFitnessScore() << std::endl;
-        //std::cout << "Transformation matrix:" << std::endl;
-        //std::cout << gicp.getFinalTransformation() << std::endl;
+        std::wcout << L"Cur_cloud points : " << cur_cloud->points[1].x << L" " << cur_cloud->points[1].y << L" " << cur_cloud->points[1].z << std::endl;
+        std::wcout << L"Align_cloud points : " << align_cloud->points[1].x << L" " << align_cloud->points[1].y << L" " << align_cloud->points[1].z << std::endl;
+        std::wcout << L"Prev_cloud points : " << prev_cloud->points[1].x << L" " << prev_cloud->points[1].y << L" " << prev_cloud->points[1].z << std::endl;
+        std::cout << "Transformation matrix:" << std::endl;
+
+        accum_tf = gicp.getFinalTransformation();
+        std::cout << accum_tf << std::endl;
+        roll = atan2(accum_tf(3, 2), accum_tf(3, 3));
+        pitch = atan2(-accum_tf(3, 1), sqrt(pow(accum_tf(3, 2), 2) + pow(accum_tf(3, 3), 2)));
+        yaw = atan2(accum_tf(2, 1), accum_tf(1, 1));
+        std::cout << "Roll :" << roll << std::endl;
+        std::cout << "Pitch :" << pitch << std::endl;
+        std::cout << "Yaw :" << yaw << std::endl;
     }
     else std::wcout << L"ICP did not converge." << std::endl;
 
@@ -130,18 +161,18 @@ void GICP() {
     std::chrono::duration<double> t_reg = t_end - t_start;
     std::wcout << L"ICP Takes " << t_reg.count() << L" sec..." << endl;
 
-    if (gicp.getFitnessScore(10.0) < 5.0) {
+    if (gicp.getFitnessScore(1.0) < 5.0) {
         //co_cloud->clear();
         *co_cloud = *cloud + *align_cloud;
-        prev_cloud = align_cloud;
-        //cloud = co_cloud;
+        *prev_cloud = *align_cloud;
 
         //Remove duplicated points
         pcl::VoxelGrid<pcl::PointXYZ> sor;
         sor.setInputCloud(co_cloud);
-        sor.setLeafSize(0.1f, 0.1f, 0.1f);
+        sor.setLeafSize(0.2f, 0.2f, 0.2f);
         sor.filter(*cloud);
-        std::wcout << L"DownSampling Cloud points size is " << cloud->points.size() << std::endl;
+
+        std::wcout << L"Accumulated Points Size... : " << cloud->points.size() << std::endl;
     }
     else std::wcout << L"[High ICP score] Skip registration of this frame " << gicp.getFitnessScore() << std::endl;
 }
@@ -225,7 +256,7 @@ int main(int argc, char** argv)
                     return;
                 }
 
-                while (true)
+                for (int i = 0; i < NumberOfFramesToCapture; i++)
                 {
                     // Capture the next single frame image
                     TRef<asdk::IFrame> frame;
