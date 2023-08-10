@@ -127,22 +127,22 @@ void GICP() {
     // GICP
     pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> gicp;
     gicp.setMaximumIterations(1000); //def=200
-    gicp.setMaximumOptimizerIterations(500); //def=20
+    gicp.setMaximumOptimizerIterations(100); //def=20
     gicp.setMaxCorrespondenceDistance(10); //def=5
     gicp.setCorrespondenceRandomness(100); //def=20
-    gicp.setUseReciprocalCorrespondences(false); //def=false
+    gicp.setUseReciprocalCorrespondences(true); //def=false
     gicp.setRANSACIterations(100); //def=0
-    gicp.setRANSACOutlierRejectionThreshold(1); //def=0.05
+    gicp.setRANSACOutlierRejectionThreshold(10); //def=0.05
 
     //maximum allowable squared difference between two consecutive transformations
     //in order for an optimization to be considered as having converged to the final solution.
-    gicp.setTransformationEpsilon(0.0005); //def=0.0005
-    gicp.setRotationEpsilon(0.002); //def=0.002
-    gicp.setEuclideanFitnessEpsilon(0.005); //def=-1.79769e+308
+    gicp.setTransformationEpsilon(1e-12); //def=0.0005
+    gicp.setRotationEpsilon(1e-12); //def=0.002
+    gicp.setEuclideanFitnessEpsilon(1e-12); //def=-1.79769e+308
 
     //set minimal threshold for early optimization stop
-    gicp.setTranslationGradientTolerance(0.005); //def=0.01
-    gicp.setRotationGradientTolerance(0.005); //def=0.01
+    gicp.setTranslationGradientTolerance(0.0005); //def=0.01
+    gicp.setRotationGradientTolerance(0.0005); //def=0.01
 
     pcl::PointCloud<pcl::PointXYZ>::Ptr align_cloud(new pcl::PointCloud<pcl::PointXYZ>);
     pcl::PointCloud<pcl::PointXYZ>::Ptr co_cloud(new pcl::PointCloud<pcl::PointXYZ>);
