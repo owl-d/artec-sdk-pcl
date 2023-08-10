@@ -67,29 +67,29 @@ void viewer_set()
     cur_cloud.reset(new pcl::PointCloud<pcl::PointXYZ>);
     prev_cloud.reset(new pcl::PointCloud<pcl::PointXYZ>);
     pcl::visualization::PCLVisualizer::Ptr viewer(new pcl::visualization::PCLVisualizer("Point Cloud Viewer"));
-    viewer->addPointCloud<pcl::PointXYZ>(prev_cloud, "point_cloud");
+    viewer->addPointCloud<pcl::PointXYZ>(cloud, "point_cloud");
     viewer->setBackgroundColor(0.0, 0.0, 0.0);
     viewer->setSize(1200, 1000);
 
-    //guess_tf << 0.9876884, -0.1564345, 0, 0,//turn 9deg(yaw)
-    //            0.1564345, 0.9876884, 0, 0,
-    //            0, 0, 1, 0,
-    //            0, 0, 0, 1;
+    guess_tf << 0.9961947, -0.0871557, 0, 0,//turn 5deg(yaw)
+                0.0871557, 0.9961947, 0, 0,
+                0, 0, 1, 0,
+                0, 0, 0, 1;
 
     //guess_tf << 1, 0, 0, 0,//turn 5deg(roll)
     //            0, 0.9961947, -0.0871557, 0,
     //            0, 0.0871557, 0.9961947, 0,
     //            0, 0, 0, 1;
 
-    guess_tf << 0.9961947, 0, 0.0871557, 0,//turn 5deg(pitch)
-                0, 1, 0, 0,
-                -0.0871557, 0, 0.9961947, 0,
-                0, 0, 0, 1;
+    //guess_tf << 0.9961947, 0, 0.0871557, 0,//turn 5deg(pitch)
+    //            0, 1, 0, 0,
+    //            -0.0871557, 0, 0.9961947, 0,
+    //            0, 0, 0, 1;
 
 
     while (!viewer->wasStopped())
     {
-        viewer->updatePointCloud<pcl::PointXYZ>(prev_cloud, "point_cloud");
+        viewer->updatePointCloud<pcl::PointXYZ>(cloud, "point_cloud");
         viewer->spinOnce();
         std::this_thread::sleep_for(std::chrono::milliseconds(500)); //0.5sec
     }
@@ -103,7 +103,7 @@ void mesh2pcd(TRef<asdk::IFrameMesh> mesh)
         asdk::TArrayPoint3F points = mesh->getPoints();
         int size = points.size();
 
-        std::wcout << L"Current Points Size... : " << size << std::endl;
+        std::wcout << L"\nCurrent Points Size... : " << size << std::endl;
         for (int i = 0; i < size; i++)
         {
             cur_cloud->push_back(pcl::PointXYZ(points[i].x, points[i].y, points[i].z));
@@ -119,23 +119,35 @@ void mesh2pcd(TRef<asdk::IFrameMesh> mesh)
 
 void GICP() {
 
-    double roll=0, pitch=0, yaw=0;
+    double roll = 0;
+    double pitch = 0;
+    double yaw = 0;
     std::chrono::system_clock::time_point t_start = std::chrono::system_clock::now(); // Time Consuming Check
 
     // GICP
     pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> gicp;
-    //gicp.setMaximumIterations(50); //def=200
-    gicp.setMaximumOptimizerIterations(30); //def=20
-    gicp.setCorrespondenceRandomness(50); //def=20
-    gicp.setMaxCorrespondenceDistance(0.05);
-    gicp.setUseReciprocalCorrespondences(true);
-    gicp.setRANSACIterations(10); //def=0
-    gicp.setRANSACOutlierRejectionThreshold(0.03);
+    gicp.setMaximumIterations(1000); //def=200
+    gicp.setMaximumOptimizerIterations(500); //def=20
+    gicp.setMaxCorrespondenceDistance(10); //def=5
+    gicp.setCorrespondenceRandomness(100); //def=20
+    gicp.setUseReciprocalCorrespondences(false); //def=false
+    gicp.setRANSACIterations(100); //def=0
+    gicp.setRANSACOutlierRejectionThreshold(1); //def=0.05
+
+    //maximum allowable squared difference between two consecutive transformations
+    //in order for an optimization to be considered as having converged to the final solution.
+    gicp.setTransformationEpsilon(0.0005); //def=0.0005
+    gicp.setRotationEpsilon(0.002); //def=0.002
+    gicp.setEuclideanFitnessEpsilon(0.005); //def=-1.79769e+308
+
+    //set minimal threshold for early optimization stop
+    gicp.setTranslationGradientTolerance(0.005); //def=0.01
+    gicp.setRotationGradientTolerance(0.005); //def=0.01
 
     pcl::PointCloud<pcl::PointXYZ>::Ptr align_cloud(new pcl::PointCloud<pcl::PointXYZ>);
     pcl::PointCloud<pcl::PointXYZ>::Ptr co_cloud(new pcl::PointCloud<pcl::PointXYZ>);
     gicp.setInputSource(cur_cloud);
-    gicp.setInputTarget(prev_cloud);
+    gicp.setInputTarget(cloud);
     gicp.align(*align_cloud);
 
     if (gicp.hasConverged())
@@ -148,9 +160,9 @@ void GICP() {
 
         accum_tf = gicp.getFinalTransformation();
         std::cout << accum_tf << std::endl;
-        roll = atan2(accum_tf(3, 2), accum_tf(3, 3));
-        pitch = atan2(-accum_tf(3, 1), sqrt(pow(accum_tf(3, 2), 2) + pow(accum_tf(3, 3), 2)));
-        yaw = atan2(accum_tf(2, 1), accum_tf(1, 1));
+        roll = atan2(accum_tf(2, 1), accum_tf(2, 2)) * (180 / M_PI);
+        pitch = atan2(-accum_tf(2, 0), sqrt(pow(accum_tf(2, 1), 2) + pow(accum_tf(2, 2), 2))) * (180 / M_PI);
+        yaw = atan2(accum_tf(1, 0), accum_tf(0, 0)) * (180 / M_PI);
         std::cout << "Roll :" << roll << std::endl;
         std::cout << "Pitch :" << pitch << std::endl;
         std::cout << "Yaw :" << yaw << std::endl;
@@ -161,8 +173,7 @@ void GICP() {
     std::chrono::duration<double> t_reg = t_end - t_start;
     std::wcout << L"ICP Takes " << t_reg.count() << L" sec..." << endl;
 
-    if (gicp.getFitnessScore(1.0) < 5.0) {
-        //co_cloud->clear();
+    if (gicp.getFitnessScore(5) < 0.5) {
         *co_cloud = *cloud + *align_cloud;
         *prev_cloud = *align_cloud;
 
@@ -174,7 +185,7 @@ void GICP() {
 
         std::wcout << L"Accumulated Points Size... : " << cloud->points.size() << std::endl;
     }
-    else std::wcout << L"[High ICP score] Skip registration of this frame " << gicp.getFitnessScore() << std::endl;
+    else std::wcout << L"[High ICP score] Skip registration of this frame. Score is " << gicp.getFitnessScore() << std::endl;
 }
 
 int main(int argc, char** argv)
