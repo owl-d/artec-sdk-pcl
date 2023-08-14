@@ -158,7 +158,10 @@
     <ClCompile Include="source\capture-gicp.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <Text Include="source\ReadMe.txt" />
+    <None Include="source\ReadMe.md" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="source\common.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -239,7 +239,7 @@ int main(int argc, char** argv)
     captureThreads.join_all();
 
     std::wcout << L"Accumulated Point Cloud is saved." << std::endl;
-    pcl::io::savePCDFileASCII("C:/Users/ssoss/Desktop/samples_origin/samples/output_cloud.pcd", *cloud);
+    pcl::io::savePCDFileASCII("C:/Users/ssoss/Desktop/samples_origin/samples/capture-loam-feature/output_cloud.pcd", *cloud);
 
     high_resolution_clock::time_point stopTime = high_resolution_clock::now();
 

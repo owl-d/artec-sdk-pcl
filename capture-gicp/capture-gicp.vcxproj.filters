@@ -20,8 +20,13 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <Text Include="source\ReadMe.txt">
+    <None Include="source\ReadMe.md">
       <Filter>소스 파일</Filter>
-    </Text>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="source\common.h">
+      <Filter>소스 파일</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

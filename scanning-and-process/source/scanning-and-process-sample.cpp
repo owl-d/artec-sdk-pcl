@@ -40,7 +40,7 @@ namespace asdk {
 using asdk::TRef;
 
 // this constant determines the number of frames to collect.
-const int NumberOfFramesToCapture = 100;
+const int NumberOfFramesToCapture = 200;
 
 // Texture processing needs a lot of processing power and a suitable
 // graphic card. Define the following macro if you wish to include it
@@ -54,8 +54,8 @@ const int NumberOfFramesToCapture = 100;
 // designated as OUTPUT_DIR in the current directory
 // for output files to be placed.
 #define OUTPUT_DIR L"scans"
-//#define SAVE_FUSION_MESH_ON
-//#define SAVE_TEXTURED_MESH_ON
+#define SAVE_FUSION_MESH_ON
+#define SAVE_TEXTURED_MESH_ON
 
 
 // simple error log handling for SDK calls
@@ -453,6 +453,7 @@ int main( int argc, char **argv )
             std::wcout << L"Saving the resulting mesh to an OBJ file..." << std::endl;
             const wchar_t* filename = OUTPUT_DIR L"\\untextured-mesh.obj";
             errorCode = asdk::io::saveObjCompositeToFile( filename, resultMesh );
+            errorCode = asdk::io::Obj::save(L"frame.obj", resultMesh);
             if( errorCode != asdk::ErrorCode_OK )
             {
                 std::wcout << L"Cannot open file '" << filename << L"'" << std::endl;

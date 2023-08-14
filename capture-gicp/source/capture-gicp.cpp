@@ -29,6 +29,7 @@
 
 #include <thread>
 #include <math.h>
+#include "common.h"
 
 using namespace boost::chrono;
 namespace asdk {
@@ -41,8 +42,8 @@ using asdk::TArrayRef;
 pcl::PointCloud<pcl::PointXYZ>::Ptr cloud;
 pcl::PointCloud<pcl::PointXYZ>::Ptr cur_cloud;
 pcl::PointCloud<pcl::PointXYZ>::Ptr prev_cloud;
-Eigen::Matrix4f accum_tf;
-Eigen::Matrix4f guess_tf;
+Eigen::Matrix4f prev_tf;
+Eigen::Matrix4f cur_tf;
 bool cloud_flag = true;
 
 // Hyper Parameter
@@ -64,17 +65,7 @@ void viewer_set()
     viewer->setBackgroundColor(0.0, 0.0, 0.0);
     viewer->setSize(1200, 1000);
 
-    //guess_tf << 0.9986295, 0, 0.0523360, 0,//turn 3deg(pitch)
-    //            0, 1, 0, 0,
-    //            -0.0523360, 0, 0.9986295, 0,
-    //            0, 0, 0, 1;
-
-    guess_tf << 0.9986295, -0.0523360, 0, 0,//turn 3deg(pitch)
-        0.0523360, 0.9986295, 0, 0,
-        0, 0, 1, 0,
-        0, 0, 0, 1;
-
-
+    prev_tf = Eigen::Matrix4f::Identity();
 
     while (!viewer->wasStopped())
     {
@@ -92,7 +83,7 @@ void mesh2pcd(TRef<asdk::IFrameMesh> mesh)
         asdk::TArrayPoint3F points = mesh->getPoints();
         int size = points.size();
 
-        std::wcout << L"\nCurrent Points Size... : " << size << std::endl;
+        std::wcout << L"Current Points Size... : " << size << std::endl;
         for (int i = 0; i < size; i++)
         {
             cur_cloud->push_back(pcl::PointXYZ(points[i].x, points[i].y, points[i].z));
@@ -108,30 +99,33 @@ void mesh2pcd(TRef<asdk::IFrameMesh> mesh)
 
 void GICP() {
 
-    double roll = 0;
-    double pitch = 0;
-    double yaw = 0;
     std::chrono::system_clock::time_point t_start = std::chrono::system_clock::now(); // Time Consuming Check
 
     // GICP
     pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> gicp;
-    gicp.setMaximumIterations(300); //def=200
-    gicp.setMaximumOptimizerIterations(30); //def=20
-    gicp.setMaxCorrespondenceDistance(100); //def=5
-    gicp.setCorrespondenceRandomness(200); //def=20
+    gicp.setMaximumIterations(500); //def=200
+    gicp.setMaximumOptimizerIterations(50); //def=20
+    gicp.setMaxCorrespondenceDistance(30); //def=5
+    gicp.setCorrespondenceRandomness(500); //def=20
     //gicp.setUseReciprocalCorrespondences(true); //def=false
     gicp.setRANSACIterations(100); //def=0
     gicp.setRANSACOutlierRejectionThreshold(10); //def=0.05
 
     //maximum allowable squared difference between two consecutive transformations
     //in order for an optimization to be considered as having converged to the final solution.
-    gicp.setTransformationEpsilon(1e-7); //def=0.0005, 1e-10 부터 오래걸림 
-    gicp.setRotationEpsilon(1e-7); //def=0.002
+    gicp.setTransformationEpsilon(5e-6); //def=0.0005, 1e-10 부터 오래걸림 / 5e-6 성능 안 좋음
+    gicp.setRotationEpsilon(5e-6); //def=0.002
     gicp.setEuclideanFitnessEpsilon(5e-9); //def=-1.79769e+308
 
     //set minimal threshold for early optimization stop
     gicp.setTranslationGradientTolerance(1e-3); //def=0.01
-    gicp.setRotationGradientTolerance(1e-2); //def=0.01
+    gicp.setRotationGradientTolerance(1e-2); //def=0.01tg
+
+    // tf guess
+    Eigen::Vector3f angle = tf2euler(prev_tf);
+    angle(0) += deg2rad(3); // roll += 3 deg
+    Eigen::Matrix4f guess_tf = euler2tf(angle);
+    std::wcout << L"Guess tf (R/P/Y) : " << rad2deg(angle(0)) << L" / " << rad2deg(angle(1)) << L" / " << rad2deg(angle(2)) << std::endl;
 
     pcl::PointCloud<pcl::PointXYZ>::Ptr align_cloud(new pcl::PointCloud<pcl::PointXYZ>);
     pcl::PointCloud<pcl::PointXYZ>::Ptr co_cloud(new pcl::PointCloud<pcl::PointXYZ>);
@@ -141,20 +135,12 @@ void GICP() {
 
     if (gicp.hasConverged())
     {
-        std::wcout << L"ICP converged. Score is " << gicp.getFitnessScore() << std::endl;
-        std::wcout << L"Cur_cloud points : " << cur_cloud->points[1].x << L" " << cur_cloud->points[1].y << L" " << cur_cloud->points[1].z << std::endl;
-        std::wcout << L"Align_cloud points : " << align_cloud->points[1].x << L" " << align_cloud->points[1].y << L" " << align_cloud->points[1].z << std::endl;
-        std::wcout << L"Prev_cloud points : " << prev_cloud->points[1].x << L" " << prev_cloud->points[1].y << L" " << prev_cloud->points[1].z << std::endl;
-        std::cout << "Transformation matrix:" << std::endl;
+        std::wcout << L"\nICP converged. Score is " << gicp.getFitnessScore() << std::endl;
 
-        accum_tf = gicp.getFinalTransformation();
-        std::cout << accum_tf << std::endl;
-        roll = atan2(accum_tf(2, 1), accum_tf(2, 2)) * (180 / M_PI);
-        pitch = atan2(-accum_tf(2, 0), sqrt(pow(accum_tf(2, 1), 2) + pow(accum_tf(2, 2), 2))) * (180 / M_PI);
-        yaw = atan2(accum_tf(1, 0), accum_tf(0, 0)) * (180 / M_PI);
-        std::cout << "Roll :" << roll << std::endl;
-        std::cout << "Pitch :" << pitch << std::endl;
-        std::cout << "Yaw :" << yaw << std::endl;
+        cur_tf = gicp.getFinalTransformation();
+        Eigen::Vector3f theta = tf2euler(cur_tf);
+        std::wcout << L"Translation(X/Y/Z) :"  << cur_tf(0,3) << " / " << cur_tf(1, 3) << " / " << cur_tf(2, 3) << std::endl;
+        std::wcout << L"Rotation(R/P/Y) :" << rad2deg(theta(0)) << " / " << rad2deg(theta(1)) << " / " << rad2deg(theta(2)) << std::endl;
     }
     else std::wcout << L"ICP did not converge." << std::endl;
 
@@ -162,9 +148,10 @@ void GICP() {
     std::chrono::duration<double> t_reg = t_end - t_start;
     std::wcout << L"ICP Takes " << t_reg.count() << L" sec..." << endl;
 
-    if (gicp.getFitnessScore(100) < 1) {
+    if (gicp.getFitnessScore(100) < 5) {
         *co_cloud = *cloud + *align_cloud;
         *prev_cloud = *align_cloud;
+        prev_tf = cur_tf;
 
         //Remove duplicated points
         pcl::VoxelGrid<pcl::PointXYZ> sor;
@@ -292,7 +279,8 @@ int main(int argc, char** argv)
                     {
                         return;
                     }
-                    std::wcout << "frame " << std::setw(4) << (frameNumber + 1) << "\r";
+                    //std::wcout << "frame " << std::setw(4) << (frameNumber + 1) << "\r";
+                    std::wcout << "\n\n---------------------------------------\nframe " << std::setw(4) << (frameNumber + 1) << std::endl;
 
                     // Reconstruct 3D mesh for the captured frame
                     TRef<asdk::IFrameMesh> mesh;
