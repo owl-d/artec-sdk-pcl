@@ -1,4 +1,4 @@
-#parallel-capture
+# capture-gicp
 
 Convert Mesh to Point cloud construct and real-time visualization using PCL lib.
 

@@ -57,8 +57,14 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <ItemGroup>
+    <ClCompile Include="source\feature-extraction.cpp" />
     <ClCompile Include="source\parallel-capture-sample.cpp" />
     <None Include="ReadMe.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="source\common.h" />
+    <ClInclude Include="source\feature-extraction.h" />
+    <ClInclude Include="source\tic_toc.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
