@@ -24,6 +24,18 @@
 #include <artec/sdk/capturing/IFrameProcessor.h>
 #include <artec/sdk/capturing/IArrayScannerId.h>
 
+#include <pcl/visualization/pcl_visualizer.h>
+#include <pcl/common/io.h>
+#include <pcl/common/concatenate.h>
+#include <pcl/io/pcd_io.h>
+#include <pcl/point_types.h>
+#include <pcl/point_cloud.h>
+#include <pcl/common/transforms.h>
+#include <pcl/registration/gicp.h>
+#include <pcl/filters/voxel_grid.h>
+
+#include <thread>
+
 using namespace boost::chrono;
 namespace asdk {
     using namespace artec::sdk::base;
@@ -32,8 +44,44 @@ namespace asdk {
 using asdk::TRef;
 using asdk::TArrayRef;
 
+pcl::PointCloud<pcl::PointXYZ>::Ptr cloud;
+
 // this constant determines the number of frames to collect.
-const int NumberOfFramesToCapture = 100;
+const int NumberOfFramesToCapture = 1000;
+
+void viewer_set()
+{
+    std::wcout << L"Init cloud" << std::endl;
+    cloud.reset(new pcl::PointCloud<pcl::PointXYZ>);
+    pcl::visualization::PCLVisualizer::Ptr viewer(new pcl::visualization::PCLVisualizer("Point Cloud Viewer"));
+    viewer->addPointCloud<pcl::PointXYZ>(cloud, "point_cloud");
+    viewer->setBackgroundColor(0.0, 0.0, 0.0);
+    viewer->setSize(1200, 1000);
+
+    while (!viewer->wasStopped())
+    {
+        viewer->updatePointCloud<pcl::PointXYZ>(cloud, "point_cloud");
+        viewer->spinOnce();
+        std::this_thread::sleep_for(std::chrono::milliseconds(200)); //0.2sec
+    }
+}
+
+void mesh2pcd(TRef<asdk::IFrameMesh> mesh)
+{
+    if (mesh->isTextured())
+    {
+        cloud->clear();
+        asdk::TArrayPoint3F points = mesh->getPoints();
+        int size = points.size();
+
+        std::wcout << L"Current Points Size... : " << size << std::endl;
+        for (int i = 0; i < size; i++)
+        {
+            cloud->push_back(pcl::PointXYZ(points[i].x, points[i].y, points[i].z));
+        }
+    }
+    else std::wcout << L"Mesh has no texture" << std::endl;
+}
 
 
 int main(int argc, char** argv)
@@ -45,6 +93,9 @@ int main(int argc, char** argv)
     // comfortable with these Artec Scanning SDK code examples,
     // we suggest you to set this level to asdk::VerboseLevel_Info.
     asdk::setOutputLevel(asdk::VerboseLevel_Trace);
+
+    // Initialize Pointcloud and viz
+    std::thread cloud_viz(viewer_set);
 
     TRef<asdk::IScanner> scanner;
     {
@@ -162,6 +213,8 @@ int main(int argc, char** argv)
                         continue;
                     }
 
+                    mesh2pcd(mesh);
+
                     // Calculate additional data
                     mesh->calculate(asdk::CM_Normals);
 
@@ -198,6 +251,9 @@ int main(int argc, char** argv)
 
     scanner = NULL;
     std::wcout << L"Scanner released" << std::endl;
+
+    cloud_viz.join();
+    std::wcout << L"Waits for the thread to finish its execution" << std::endl;
 
     return 0;
 }

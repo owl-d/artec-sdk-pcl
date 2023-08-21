@@ -61,6 +61,7 @@ void viewer_set()
     cur_cloud.reset(new pcl::PointCloud<pcl::PointXYZ>);
     prev_cloud.reset(new pcl::PointCloud<pcl::PointXYZ>);
     pcl::visualization::PCLVisualizer::Ptr viewer(new pcl::visualization::PCLVisualizer("Point Cloud Viewer"));
+    //viewer->addPointCloud<pcl::PointXYZ>(cur_cloud, "cur_cloud");
     viewer->addPointCloud<pcl::PointXYZ>(cloud, "point_cloud");
     viewer->setBackgroundColor(0.0, 0.0, 0.0);
     viewer->setSize(1200, 1000);
@@ -70,8 +71,9 @@ void viewer_set()
     while (!viewer->wasStopped())
     {
         viewer->updatePointCloud<pcl::PointXYZ>(cloud, "point_cloud");
+        //viewer->updatePointCloud<pcl::PointXYZ>(cur_cloud, "cur_cloud");
         viewer->spinOnce();
-        std::this_thread::sleep_for(std::chrono::milliseconds(500)); //0.5sec
+        std::this_thread::sleep_for(std::chrono::milliseconds(200)); //0.2sec
     }
 }
 
@@ -105,25 +107,25 @@ void GICP() {
     pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> gicp;
     gicp.setMaximumIterations(500); //def=200
     gicp.setMaximumOptimizerIterations(50); //def=20
-    gicp.setMaxCorrespondenceDistance(30); //def=5
+    gicp.setMaxCorrespondenceDistance(50); //def=5
     gicp.setCorrespondenceRandomness(500); //def=20
     //gicp.setUseReciprocalCorrespondences(true); //def=false
-    gicp.setRANSACIterations(100); //def=0
-    gicp.setRANSACOutlierRejectionThreshold(10); //def=0.05
+    gicp.setRANSACIterations(300); //def=0
+    gicp.setRANSACOutlierRejectionThreshold(60); //def=0.05
 
     //maximum allowable squared difference between two consecutive transformations
-    //in order for an optimization to be considered as having converged to the final solution.
-    gicp.setTransformationEpsilon(5e-6); //def=0.0005, 1e-10 부터 오래걸림 / 5e-6 성능 안 좋음
-    gicp.setRotationEpsilon(5e-6); //def=0.002
-    gicp.setEuclideanFitnessEpsilon(5e-9); //def=-1.79769e+308
+    //in order for an optimization to be considered as having converged to the final solution. : 너무 크면 일찍 수렴했다고 판단하고, 너무 작으면 오래 걸림
+    gicp.setTransformationEpsilon(5e-8); //def=0.0005, 1e-10 부터 오래걸림 / 5e-6 성능 안 좋음
+    gicp.setRotationEpsilon(5e-8); //def=0.002
+    gicp.setEuclideanFitnessEpsilon(5e-8); //def=-1.79769e+308
 
-    //set minimal threshold for early optimization stop
-    gicp.setTranslationGradientTolerance(1e-3); //def=0.01
-    gicp.setRotationGradientTolerance(1e-2); //def=0.01tg
+    //set minimal threshold for early optimization stop : 너무 크면 최적화 일찍 멈추고, 너무 작으면 오래 걸림
+    gicp.setTranslationGradientTolerance(1e-3); //def=0.01 // 1e-3 괜찮음
+    gicp.setRotationGradientTolerance(1e-2); //def=0.01    // 1e-2 괜찮음
 
     // tf guess
     Eigen::Vector3f angle = tf2euler(prev_tf);
-    angle(0) += deg2rad(3); // roll += 3 deg
+    angle(1) += deg2rad(2); // pitch += 3 deg
     Eigen::Matrix4f guess_tf = euler2tf(angle);
     std::wcout << L"Guess tf (R/P/Y) : " << rad2deg(angle(0)) << L" / " << rad2deg(angle(1)) << L" / " << rad2deg(angle(2)) << std::endl;
 
@@ -131,7 +133,7 @@ void GICP() {
     pcl::PointCloud<pcl::PointXYZ>::Ptr co_cloud(new pcl::PointCloud<pcl::PointXYZ>);
     gicp.setInputSource(cur_cloud);
     gicp.setInputTarget(cloud);
-    gicp.align(*align_cloud);
+    gicp.align(*align_cloud, guess_tf);
 
     if (gicp.hasConverged())
     {
@@ -151,6 +153,7 @@ void GICP() {
     if (gicp.getFitnessScore(100) < 5) {
         *co_cloud = *cloud + *align_cloud;
         *prev_cloud = *align_cloud;
+        //pcl::transformPointCloud(*cur_cloud, *prev_cloud, guess_tf);
         prev_tf = cur_tf;
 
         //Remove duplicated points
