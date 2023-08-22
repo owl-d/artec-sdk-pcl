@@ -26,6 +26,7 @@
 #include <pcl/common/transforms.h>
 #include <pcl/registration/gicp.h>
 #include <pcl/filters/voxel_grid.h>
+#include <pcl/filters/statistical_outlier_removal.h>
 
 #include <thread>
 #include <math.h>
@@ -48,10 +49,6 @@ bool cloud_flag = true;
 
 // Hyper Parameter
 const int NumberOfFramesToCapture = 100; // # of frames to collect.
-//const int MaximumIterations = 50;       // # of icp max iteration
-//double Score_threshold = 5.0;           // current cloud is added to global if only socre(Mean squared distance) < threshold
-//double MaxCorrespondenceDistance = 0.1;  // icp max correspondence distance    
-//double TransformationEpsilon = 1e-6;    // icp tf epsilon
 
 
 void viewer_set()
@@ -61,17 +58,16 @@ void viewer_set()
     cur_cloud.reset(new pcl::PointCloud<pcl::PointXYZ>);
     prev_cloud.reset(new pcl::PointCloud<pcl::PointXYZ>);
     pcl::visualization::PCLVisualizer::Ptr viewer(new pcl::visualization::PCLVisualizer("Point Cloud Viewer"));
-    //viewer->addPointCloud<pcl::PointXYZ>(cur_cloud, "cur_cloud");
     viewer->addPointCloud<pcl::PointXYZ>(cloud, "point_cloud");
     viewer->setBackgroundColor(0.0, 0.0, 0.0);
     viewer->setSize(1200, 1000);
+    viewer->setCameraPosition(0, 0, 0, 0, 0, -200, 0, 1, 0);
 
     prev_tf = Eigen::Matrix4f::Identity();
 
     while (!viewer->wasStopped())
     {
         viewer->updatePointCloud<pcl::PointXYZ>(cloud, "point_cloud");
-        //viewer->updatePointCloud<pcl::PointXYZ>(cur_cloud, "cur_cloud");
         viewer->spinOnce();
         std::this_thread::sleep_for(std::chrono::milliseconds(200)); //0.2sec
     }
@@ -124,16 +120,16 @@ void GICP() {
     gicp.setRotationGradientTolerance(1e-2); //def=0.01    // 1e-2 ±¦ÂúÀ½
 
     // tf guess
-    Eigen::Vector3f angle = tf2euler(prev_tf);
-    angle(1) += deg2rad(2); // pitch += 3 deg
-    Eigen::Matrix4f guess_tf = euler2tf(angle);
-    std::wcout << L"Guess tf (R/P/Y) : " << rad2deg(angle(0)) << L" / " << rad2deg(angle(1)) << L" / " << rad2deg(angle(2)) << std::endl;
+    //Eigen::Vector3f angle = tf2euler(prev_tf);
+    //angle(1) += deg2rad(2); // pitch += 3 deg
+    //Eigen::Matrix4f guess_tf = euler2tf(angle);
+    //std::wcout << L"Guess tf (R/P/Y) : " << rad2deg(angle(0)) << L" / " << rad2deg(angle(1)) << L" / " << rad2deg(angle(2)) << std::endl;
 
     pcl::PointCloud<pcl::PointXYZ>::Ptr align_cloud(new pcl::PointCloud<pcl::PointXYZ>);
     pcl::PointCloud<pcl::PointXYZ>::Ptr co_cloud(new pcl::PointCloud<pcl::PointXYZ>);
     gicp.setInputSource(cur_cloud);
     gicp.setInputTarget(cloud);
-    gicp.align(*align_cloud, guess_tf);
+    gicp.align(*align_cloud, prev_tf);
 
     if (gicp.hasConverged())
     {
@@ -225,95 +221,94 @@ int main(int argc, char** argv)
 
     boost::mutex meshesProtection;
 
-    //std::wcout << L"Capturing " << NumberOfFramesToCapture << " frames with " << boost::thread::hardware_concurrency() << L" threads" << std::endl;
-    std::wcout << L"Capturing " << NumberOfFramesToCapture << " frames with 1" << L" threads" << std::endl;
+    std::wcout << L"Capture Process ... " << std::endl;
     high_resolution_clock::time_point startTime = high_resolution_clock::now();
 
     // Initialize Pointcloud and viz
     std::thread cloud_viz(viewer_set);
 
-    // Start frame processing for every hard-supported thread available
-    boost::thread_group captureThreads;
-    //for( unsigned i = 0; i < boost::thread::hardware_concurrency(); i++ )
-    for (unsigned i = 0; i < 1; i++)
+
+    // Initialize a frame processor 
+    TRef<asdk::IFrameProcessor> processor;
+    if (scanner->createFrameProcessor(&processor) != asdk::ErrorCode_OK)
     {
-        captureThreads.create_thread([&scanner, &meshes, &meshesProtection, framesAlreadyCaptured]
-            {
-                // Initialize a frame processor 
-                TRef<asdk::IFrameProcessor> processor;
-                if (scanner->createFrameProcessor(&processor) != asdk::ErrorCode_OK)
-                {
-                    return;
-                }
-
-                for (int i = 0; i < NumberOfFramesToCapture; i++)
-                {
-                    // Capture the next single frame image
-                    TRef<asdk::IFrame> frame;
-                    asdk::ErrorCode ec = scanner->capture(&frame, true);
-                    if (ec != asdk::ErrorCode_OK)
-                    {
-                        if (ec == asdk::ErrorCode_FrameCaptureTimeout)
-                        {
-                            std::wcout << L"Capture error: frame capture timeout" << std::endl;
-                        }
-                        else if (ec == asdk::ErrorCode_FrameCorrupted)
-                        {
-                            std::wcout << L"Capture error: frame corrupted" << std::endl;
-                        }
-                        else if (ec == asdk::ErrorCode_FrameReconstructionFailed)
-                        {
-                            std::wcout << L"Capture error: frame reconstruction failed" << std::endl;
-                        }
-                        else if (ec == asdk::ErrorCode_FrameRegistrationFailed)
-                        {
-                            std::wcout << L"Capture error: frame registration failed" << std::endl;
-                        }
-                        else
-                        {
-                            std::wcout << L"Capture error: unknown error" << std::endl;
-                        }
-
-                        continue;
-                    }
-
-                    int frameNumber = frame->getFrameNumber();
-                    if (frameNumber >= NumberOfFramesToCapture + framesAlreadyCaptured)
-                    {
-                        return;
-                    }
-                    //std::wcout << "frame " << std::setw(4) << (frameNumber + 1) << "\r";
-                    std::wcout << "\n\n---------------------------------------\nframe " << std::setw(4) << (frameNumber + 1) << std::endl;
-
-                    // Reconstruct 3D mesh for the captured frame
-                    TRef<asdk::IFrameMesh> mesh;
-                    if (processor->reconstructAndTexturizeMesh(&mesh, frame) != asdk::ErrorCode_OK)
-                    {
-                        std::wcout << L"Capture error: reconstruction failed for frame " << std::setw(4) << (frameNumber + 1) << std::endl;
-                        continue;
-                    }
-                    mesh2pcd(mesh);
-                    GICP();
-
-                    // Calculate additional data
-                    mesh->calculate(asdk::CM_Normals);
-
-                    std::wcout << "mesh  " << std::setw(4) << (frameNumber + 1) << "\r";
-                    std::wcout.flush();
-
-                    // Save the mesh for later use
-                    boost::lock_guard<boost::mutex> guard(meshesProtection);
-
-                    meshes[frameNumber - framesAlreadyCaptured] = mesh;
-                }
-            });
+        return 0;
     }
 
-    // Wait for the capture process to finish
-    captureThreads.join_all();
+    for (int i = 0; i < NumberOfFramesToCapture; i++)
+    {
+        // Capture the next single frame image
+        TRef<asdk::IFrame> frame;
+        asdk::ErrorCode ec = scanner->capture(&frame, true);
+        if (ec != asdk::ErrorCode_OK)
+        {
+            if (ec == asdk::ErrorCode_FrameCaptureTimeout)
+            {
+                std::wcout << L"Capture error: frame capture timeout" << std::endl;
+            }
+            else if (ec == asdk::ErrorCode_FrameCorrupted)
+            {
+                std::wcout << L"Capture error: frame corrupted" << std::endl;
+            }
+            else if (ec == asdk::ErrorCode_FrameReconstructionFailed)
+            {
+                std::wcout << L"Capture error: frame reconstruction failed" << std::endl;
+            }
+            else if (ec == asdk::ErrorCode_FrameRegistrationFailed)
+            {
+                std::wcout << L"Capture error: frame registration failed" << std::endl;
+            }
+            else
+            {
+                std::wcout << L"Capture error: unknown error" << std::endl;
+            }
 
-    std::wcout << L"Accumulated Point Cloud is saved." << std::endl;
-    pcl::io::savePCDFileASCII("C:/Users/ssoss/Desktop/samples_origin/samples/output_cloud.pcd", *cloud);
+            continue;
+        }
+
+        int frameNumber = frame->getFrameNumber();
+        if (frameNumber >= NumberOfFramesToCapture + framesAlreadyCaptured)
+        {
+            return 0;
+        }
+        //std::wcout << "frame " << std::setw(4) << (frameNumber + 1) << "\r";
+        std::wcout << "\n\n---------------------------------------\nframe " << std::setw(4) << (frameNumber + 1) << std::endl;
+
+        // Reconstruct 3D mesh for the captured frame
+        TRef<asdk::IFrameMesh> mesh;
+        if (processor->reconstructAndTexturizeMesh(&mesh, frame) != asdk::ErrorCode_OK)
+        {
+            std::wcout << L"Capture error: reconstruction failed for frame " << std::setw(4) << (frameNumber + 1) << std::endl;
+            continue;
+        }
+        mesh2pcd(mesh);
+        GICP();
+
+        // Calculate additional data
+        mesh->calculate(asdk::CM_Normals);
+
+        std::wcout << "mesh  " << std::setw(4) << (frameNumber + 1) << "\r";
+        std::wcout.flush();
+
+        // Save the mesh for later use
+        boost::lock_guard<boost::mutex> guard(meshesProtection);
+
+        meshes[frameNumber - framesAlreadyCaptured] = mesh;
+    }
+
+
+    //sor
+    std::wcout << L"\n\n---------------------------------------\nCapture Process Done." << std::endl;
+    std::wcout << L"\nOutlier Removal Process ...\n" << std::endl;
+    pcl::PointCloud<pcl::PointXYZ>::Ptr filtered_cloud(new pcl::PointCloud<pcl::PointXYZ>);
+    pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
+    sor.setInputCloud(cloud);
+    sor.setMeanK(50);
+    sor.setStddevMulThresh(1.0);
+    sor.filter(*filtered_cloud);
+
+    std::wcout << L"Filtered point cloud is saved." << std::endl;
+    pcl::io::savePCDFileASCII("C:/Users/ssoss/Desktop/samples_origin/samples/output_cloud.pcd", *filtered_cloud);
 
     high_resolution_clock::time_point stopTime = high_resolution_clock::now();
 

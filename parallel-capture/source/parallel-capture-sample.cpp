@@ -57,6 +57,7 @@ void viewer_set()
     viewer->addPointCloud<pcl::PointXYZ>(cloud, "point_cloud");
     viewer->setBackgroundColor(0.0, 0.0, 0.0);
     viewer->setSize(1200, 1000);
+    viewer->setCameraPosition(0, 0, 0, 0, 0, -200, 0, 1, 0);
 
     while (!viewer->wasStopped())
     {
