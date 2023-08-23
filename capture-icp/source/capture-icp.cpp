@@ -48,7 +48,7 @@ Eigen::Matrix4f cur_tf;
 bool cloud_flag = true;
 
 // Hyper Parameter
-const int NumberOfFramesToCapture = 100; // # of frames to collect.
+const int NumberOfFramesToCapture = 100; // # of frames to collect.-+
 
 
 void viewer_set()

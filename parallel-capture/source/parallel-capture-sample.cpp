@@ -26,13 +26,9 @@
 
 #include <pcl/visualization/pcl_visualizer.h>
 #include <pcl/common/io.h>
-#include <pcl/common/concatenate.h>
 #include <pcl/io/pcd_io.h>
 #include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
-#include <pcl/common/transforms.h>
-#include <pcl/registration/gicp.h>
-#include <pcl/filters/voxel_grid.h>
 
 #include <thread>
 
